@@ -36,7 +36,9 @@ if [ -d "$GITHUB_WORKSPACE/$INPUT_CONTEXT" ]; then
   esac
   set --
 else
-  context="git://${GITHUB_SERVER_URL#*://}/$GITHUB_REPOSITORY.git#$GITHUB_REF#$GITHUB_SHA"
+  # The bare SHA makes kaniko fetch the commit itself, which also reaches the
+  # merge commit of a pull request.
+  context="git://${GITHUB_SERVER_URL#*://}/$GITHUB_REPOSITORY.git#$GITHUB_SHA"
   dockerfile="$INPUT_DOCKERFILE"
   set -- --context-sub-path="$INPUT_CONTEXT"
   GIT_USERNAME=x-access-token
