@@ -17,6 +17,8 @@ workflows:
     '.github/workflows/test-cache-split.yml':
         - 'actions/checkout@v7.0.1'
     '.github/workflows/test-container.yml': []
+    '.github/workflows/test-default-destination.yml':
+        - 'actions/checkout@v7.0.1'
     '.github/workflows/test-features.yml':
         - 'actions/checkout@v7.0.1'
     '.github/workflows/test-multiarch-emulated.yml':

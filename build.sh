@@ -3,6 +3,10 @@
 # Kubernetes runner, and in its own container through Docker otherwise.
 set -eu
 
+if [ -z "$INPUT_DESTINATION" ]; then
+  INPUT_DESTINATION=$("$GITHUB_ACTION_PATH/destination.sh")
+fi
+
 results="$RUNNER_TEMP/kaniko-$$"
 mkdir -p "$results"
 if [ -x /kaniko/executor ]; then

@@ -1,0 +1,28 @@
+# Without a destination, the image goes to ghcr.io/<owner>/<repo> tagged with
+# a slug of the branch or tag. Pull requests build refs such as 123/merge, and
+# the slug turns them into a valid tag.
+name: test-default-destination
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - id: build
+        uses: ./
+        with:
+          context: tests/build
+          target: base
+      - name: verify
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+        run: echo "$IMAGE" | grep -E "^ghcr.io/osscontainertools/kaniko-action@sha256:[0-9a-f]{64}$"

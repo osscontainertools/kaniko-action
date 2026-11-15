@@ -20,7 +20,7 @@ on:
         type: string
         default: Dockerfile
       destination:
-        description: Image reference to push the index to. Each platform is also pushed as `<destination>-<arch>`. Empty pushes to `ghcr.io/<owner>/<repo>:<branch or tag>`.
+        description: Image reference to push the index to. Each platform is also pushed as `<destination>-<arch>`. Empty pushes to `ghcr.io/<owner>/<repo>:<ref slug>`, as the action does.
         type: string
         default: ""
       target:
@@ -107,15 +107,20 @@ jobs:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
           path: .kaniko-action
-      - id: suffix
+      - id: destination
         env:
+          DESTINATION: ${{ inputs.destination }}
           PLATFORM: ${{ matrix.platform }}
-        run: echo "suffix=$(echo "${PLATFORM#*/}" | tr / -)" >> "$GITHUB_OUTPUT"
+        run: |
+          if [ -z "$DESTINATION" ]; then
+            DESTINATION=$(.kaniko-action/destination.sh)
+          fi
+          echo "destination=$DESTINATION-$(echo "${PLATFORM#*/}" | tr / -)" >> "$GITHUB_OUTPUT"
       - uses: ./.kaniko-action
         with:
           context: src/${{ inputs.context }}
           dockerfile: ${{ inputs.dockerfile }}
-          destination: ${{ inputs.destination || format('ghcr.io/{0}:{1}', github.repository, github.ref_name) }}-${{ steps.suffix.outputs.suffix }}
+          destination: ${{ steps.destination.outputs.destination }}
           target: ${{ inputs.target }}
           build-args: ${{ inputs.build-args }}
           push: ${{ inputs.push }}
@@ -144,12 +149,15 @@ jobs:
           path: .kaniko-action
       - id: merge
         env:
-          DESTINATION: ${{ inputs.destination || format('ghcr.io/{0}:{1}', github.repository, github.ref_name) }}
+          DESTINATION: ${{ inputs.destination }}
           PLATFORMS: ${{ inputs.platforms }}
           MERGE_IMAGE: ${{ inputs.merge-image }}
           KANIKO_GHCR_IO_USER: ${{ github.actor }}
           KANIKO_GHCR_IO_PASSWORD: ${{ github.token }}
         run: |
+          if [ -z "$DESTINATION" ]; then
+            DESTINATION=$(.kaniko-action/destination.sh)
+          fi
           leaves=""
           for platform in $(echo "$PLATFORMS" | jq -r '.[]'); do
             leaves="$leaves $DESTINATION-$(echo "${platform#*/}" | tr / -)"
