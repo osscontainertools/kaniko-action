@@ -38,6 +38,7 @@ if [ -d "$GITHUB_WORKSPACE/.git" ] ||
   { [ -d "$context_dir" ] && [ -f "$local_dockerfile" ]; }; then
   context="$root/$INPUT_CONTEXT"
   case "$INPUT_DOCKERFILE" in
+    "$GITHUB_WORKSPACE"/*) dockerfile="$root${INPUT_DOCKERFILE#"$GITHUB_WORKSPACE"}" ;;
     /*) dockerfile="$INPUT_DOCKERFILE" ;;
     *) dockerfile="$context/$INPUT_DOCKERFILE" ;;
   esac

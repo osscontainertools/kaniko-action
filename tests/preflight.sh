@@ -51,6 +51,10 @@ expect_failure "bad cache" "cache must be off, on or split" INPUT_CACHE=enabled
 expect_failure "bad retries" "retries must be a non-negative integer" INPUT_RETRIES=-1
 expect_failure "malformed platform" "unsupported platform syntax" INPUT_PLATFORMS=amd64
 expect_failure "uppercase platform" "unsupported platform syntax" INPUT_PLATFORMS=linux/AMD64
+glob_dir=$(mktemp -d)
+mkdir -p "$glob_dir/linux/amd64"
+(cd "$glob_dir" && expect_failure "wildcard platform" "unsupported platform syntax" 'INPUT_PLATFORMS=linux/*')
+rm -rf "$glob_dir"
 expect_failure "duplicate platform suffix" "duplicate image suffix" \
   INPUT_PLATFORMS=linux/arm/v6,linux/arm-v6
 expect_failure "several destinations" "must be one image reference" \

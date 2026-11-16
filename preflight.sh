@@ -54,7 +54,8 @@ if [ -n "$INPUT_PLATFORMS" ]; then
   esac
   platforms=$(printf '%s' "$INPUT_PLATFORMS" | tr ',' ' ')
   suffixes=' '
-  # The input grammar above excludes whitespace and glob characters.
+  # Word splitting without pathname expansion, so `linux/*` reaches the check.
+  set -f
   # shellcheck disable=SC2086
   for platform in $platforms; do
     printf '%s\n' "$platform" |
