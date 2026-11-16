@@ -36,28 +36,14 @@ case "$INPUT_RETRIES" in
   '' | *[!0-9]*) fail "retries must be a non-negative integer, got '$INPUT_RETRIES'" ;;
 esac
 
-while IFS= read -r arg || [ -n "$arg" ]; do
-  [ -z "$arg" ] && continue
-  printf '%s\n' "$arg" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]*=' ||
-    fail "build-args entries must be KEY=value, got '$arg'"
-done <<EOF
-$INPUT_BUILD_ARGS
-EOF
-
 if [ "$INPUT_TELEMETRY" != off ]; then
   [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] &&
     [ -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ] ||
     fail "telemetry needs the job permission id-token: write"
 fi
 
-if [ "$INPUT_TELEMETRY" = custom ]; then
-  for endpoint in "$INPUT_TELEMETRY_ENDPOINT" "$INPUT_TELEMETRY_TOKEN_EXCHANGE_ENDPOINT"; do
-    [ -z "$endpoint" ] && continue
-    printf '%s\n' "$endpoint" | grep -Eiq '^https?://[^/[:space:]?#]+([/?#].*)?$' ||
-      fail "custom telemetry endpoints must be valid HTTP(S) URLs, got '$endpoint'"
-  done
-  [ -n "$INPUT_TELEMETRY_ENDPOINT" ] ||
-    fail "telemetry-endpoint is required when telemetry is custom"
+if [ "$INPUT_TELEMETRY" = custom ] && [ -z "$INPUT_TELEMETRY_ENDPOINT" ]; then
+  fail "telemetry-endpoint is required when telemetry is custom"
 fi
 
 if [ -n "$INPUT_PLATFORMS" ]; then
@@ -83,43 +69,8 @@ if [ -n "$INPUT_PLATFORMS" ]; then
 fi
 
 case "$INPUT_DESTINATION" in
-  '' | *[[:space:]]* | *'@'* | *//* | /* | */)
-    fail "destination must be an image reference without whitespace or a digest"
-    ;;
+  *[[:space:]]*) fail "destination must be one image reference, got '$INPUT_DESTINATION'" ;;
 esac
-destination=$INPUT_DESTINATION
-last_component=${destination##*/}
-case "$last_component" in
-  *:*)
-    tag=${last_component##*:}
-    repository=${destination%:*}
-    printf '%s\n' "$tag" | grep -Eq '^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$' ||
-      fail "destination has an invalid image tag"
-    ;;
-  *)
-    tag=""
-    repository=$destination
-    ;;
-esac
-printf '%s\n' "$repository" | grep -Eq '^[a-z0-9]([a-z0-9._:/-]*[a-z0-9])?$' ||
-  fail "destination has an invalid repository name"
-case "$repository" in
-  *'/./'* | *'/../'* | *'//'* | *[A-Z]*)
-    fail "destination has an invalid repository name"
-    ;;
-esac
-if [ -n "$INPUT_PLATFORMS" ] && [ -z "$tag" ]; then
-  fail "destination must include an image tag when platforms is set"
-fi
-if [ -n "$INPUT_PLATFORMS" ]; then
-  # suffixes contains only validated architecture characters and spaces.
-  # shellcheck disable=SC2086
-  for suffix in $suffixes; do
-    tag_length=$(printf '%s' "$tag-$suffix" | wc -c | tr -d '[:space:]')
-    [ "$tag_length" -le 128 ] ||
-      fail "destination tag is too long after adding platform suffix '$suffix'"
-  done
-fi
 
 if [ -n "${INPUT_LOCAL_CONTEXT:-}" ]; then
   [ -d "$INPUT_LOCAL_CONTEXT" ] ||

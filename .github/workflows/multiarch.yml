@@ -20,7 +20,7 @@ on:
         type: string
         default: Dockerfile
       destination:
-        description: Image reference to push the index to. Each platform is also pushed as `<destination>-<arch>`. Empty pushes to `ghcr.io/<owner>/<repo>:<ref slug>`, as the action does.
+        description: Image reference to push the index to. Each platform is also pushed as `<destination>-<arch>`, tagged `latest-<arch>` when `destination` has no tag. Empty pushes to `ghcr.io/<owner>/<repo>:<ref slug>`, as the action does.
         type: string
         default: ""
       target:
@@ -115,6 +115,10 @@ jobs:
           if [ -z "$DESTINATION" ]; then
             DESTINATION=$(.kaniko-action/destination.sh)
           fi
+          case "${DESTINATION##*/}" in
+            *:*) ;;
+            *) DESTINATION="$DESTINATION:latest" ;;
+          esac
           echo "destination=$DESTINATION-$(echo "${PLATFORM#*/}" | tr / -)" >> "$GITHUB_OUTPUT"
       - uses: ./.kaniko-action
         with:
@@ -158,6 +162,10 @@ jobs:
           if [ -z "$DESTINATION" ]; then
             DESTINATION=$(.kaniko-action/destination.sh)
           fi
+          case "${DESTINATION##*/}" in
+            *:*) ;;
+            *) DESTINATION="$DESTINATION:latest" ;;
+          esac
           leaves=""
           for platform in $(echo "$PLATFORMS" | jq -r '.[]'); do
             leaves="$leaves $DESTINATION-$(echo "${platform#*/}" | tr / -)"

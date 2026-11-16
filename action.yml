@@ -64,7 +64,7 @@ inputs:
     description: Additional executor flags.
     default: ""
   platforms:
-    description: Platforms to build, separated by commas, such as `linux/amd64,linux/arm64`. Platforms other than the runner's are emulated with QEMU, which needs a runner with Docker. Each is pushed as `<destination>-<arch>` and merged into one index at `destination`, which must include a tag. Empty builds for the runner's platform only.
+    description: Platforms to build, separated by commas, such as `linux/amd64,linux/arm64`. Platforms other than the runner's are emulated with QEMU, which needs a runner with Docker. Each is pushed as `<destination>-<arch>`, tagged `latest-<arch>` when `destination` has no tag, and merged into one index at `destination`. Empty builds for the runner's platform only.
     default: ""
   image:
     description: kaniko debug image to run the build in, when the job does not already run in a kaniko image.

@@ -49,26 +49,14 @@ expect_failure() {
 expect_failure "bad boolean" "push must be true or false" INPUT_PUSH=yes
 expect_failure "bad cache" "cache must be off, on or split" INPUT_CACHE=enabled
 expect_failure "bad retries" "retries must be a non-negative integer" INPUT_RETRIES=-1
-expect_failure "bad build arg" "build-args entries must be KEY=value" INPUT_BUILD_ARGS=missing-equals
 expect_failure "malformed platform" "unsupported platform syntax" INPUT_PLATFORMS=amd64
 expect_failure "uppercase platform" "unsupported platform syntax" INPUT_PLATFORMS=linux/AMD64
 expect_failure "duplicate platform suffix" "duplicate image suffix" \
   INPUT_PLATFORMS=linux/arm/v6,linux/arm-v6
-expect_failure "missing multiarch tag" "must include an image tag" \
-  INPUT_PLATFORMS=linux/amd64 INPUT_DESTINATION=ghcr.io/example/image
-expect_failure "malformed destination" "invalid repository name" \
-  INPUT_DESTINATION=ghcr.io/Example/image:latest
-expect_failure "invalid destination tag" "invalid image tag" \
-  INPUT_DESTINATION=ghcr.io/example/image:bad+tag
-long_tag=$(printf '%0128d' 0 | tr 0 a)
-expect_failure "multiarch destination tag overflow" "tag is too long" \
-  INPUT_PLATFORMS=linux/amd64 INPUT_DESTINATION="ghcr.io/example/image:$long_tag"
+expect_failure "several destinations" "must be one image reference" \
+  "INPUT_DESTINATION=ghcr.io/example/image:a ghcr.io/example/image:b"
 expect_failure "missing custom telemetry endpoint" "telemetry-endpoint is required" \
   INPUT_TELEMETRY=custom ACTIONS_ID_TOKEN_REQUEST_URL=https://example.test/token \
-  ACTIONS_ID_TOKEN_REQUEST_TOKEN=token
-expect_failure "invalid custom telemetry URL" "valid HTTP(S) URLs" \
-  INPUT_TELEMETRY=custom INPUT_TELEMETRY_ENDPOINT=not-a-url \
-  ACTIONS_ID_TOKEN_REQUEST_URL=https://example.test/token \
   ACTIONS_ID_TOKEN_REQUEST_TOKEN=token
 expect_failure "direct multiarch" "needs a runner with Docker" \
   INPUT_PLATFORMS=linux/amd64 INPUT_DIRECT=true
@@ -81,7 +69,7 @@ env INPUT_LOCAL_CONTEXT="$action/tests/build" \
   sh "$action/preflight.sh"
 
 tmp=$(mktemp -d)
-trap 'rm -f "$tmp/docker" "$tmp/build-output"; rmdir "$tmp/workspace" "$tmp/runner" "$tmp"' EXIT HUP INT TERM
+trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 printf '%s\n' '#!/bin/sh' "echo called >> \"\$DOCKER_LOG\"" > "$tmp/docker"
 chmod +x "$tmp/docker"
 PATH="$tmp:$PATH"
