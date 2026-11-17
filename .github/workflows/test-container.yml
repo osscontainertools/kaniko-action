@@ -10,12 +10,14 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   build:
     runs-on: ubuntu-26.04
     container: ghcr.io/osscontainertools/kaniko:v1.29.1-debug@sha256:ebc38a988e5aa1aaea99240e931aeeeff9d8e6bb5a0bd0e00eaf79973bf0a773
+    services:
+      registry:
+        image: registry:3.1.2@sha256:82f6ff4a7f982960c8aa51617fea3aabc485df6e55cce80d22deb1de36f1bc3c
     steps:
       # A user writes `uses: osscontainertools/kaniko-action@62bd46e3c9e39a6625220e87090a7af9cc431218 # v1.0.3`. This test
       # fetches the action at the commit under test instead.
@@ -30,12 +32,13 @@ jobs:
         uses: ./.action
         with:
           context: tests/build
-          destination: ghcr.io/${{ github.repository }}/test-container:${{ github.sha }}
+          destination: registry:5000/test-container:${{ github.sha }}
           target: base
           build-args: |
             GREETING=hello ${{ github.run_id }}
+          extra-args: --insecure-registry=registry:5000
       - name: verify
         shell: sh
         env:
           IMAGE: ${{ steps.build.outputs.image }}
-        run: echo "$IMAGE" | grep -E "^ghcr.io/${GITHUB_REPOSITORY}/test-container@sha256:[0-9a-f]{64}$"
+        run: echo "$IMAGE" | grep -E "^registry:5000/test-container@sha256:[0-9a-f]{64}$"

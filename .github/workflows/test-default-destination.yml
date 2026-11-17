@@ -1,6 +1,7 @@
 # Without a destination, the image goes to ghcr.io/<owner>/<repo> tagged with
 # a slug of the branch or tag. Pull requests build refs such as 123/merge, and
-# the slug turns them into a valid tag.
+# the slug turns them into a valid tag. Pull requests from forks cannot write
+# to ghcr.io.
 name: test-default-destination
 
 on:
@@ -14,6 +15,7 @@ permissions:
 
 jobs:
   build:
+    if: ${{ !github.event.pull_request.head.repo.fork }}
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7.0.1

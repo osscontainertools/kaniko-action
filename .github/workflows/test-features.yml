@@ -1,7 +1,8 @@
 # Opt-in features: kaniko's Preview and BuildKit compatibility profiles, the
 # job's token as a build secret, and a trace of the build sent to Firn. The
 # BuildKit profile makes a COPY after `USER 1000` root-owned, as the Dockerfile
-# specification says. Telemetry needs `id-token: write`.
+# specification says. Telemetry needs `id-token: write`, which pull requests
+# from forks do not get.
 name: test-features
 
 on:
@@ -11,27 +12,33 @@ on:
 
 permissions:
   contents: read
-  packages: write
   id-token: write
+
+# kaniko runs on the default bridge and reaches the registry service through
+# its gateway, the runner reaches the same registry as localhost:5000.
+env:
+  REGISTRY: 172.17.0.1:5000
 
 jobs:
   build:
     runs-on: ubuntu-26.04
+    services:
+      registry:
+        image: registry:3.1.2@sha256:82f6ff4a7f982960c8aa51617fea3aabc485df6e55cce80d22deb1de36f1bc3c
+        ports:
+          - 5000:5000
     steps:
       - uses: actions/checkout@v7.0.1
       - id: build
         uses: ./
         with:
           context: tests/features
-          destination: ghcr.io/${{ github.repository }}/test-features:${{ github.sha }}
+          destination: ${{ env.REGISTRY }}/test-features:${{ github.sha }}
           profile-preview: true
           profile-buildkit: true
           github-token-secret: true
-          telemetry: firn
+          telemetry: ${{ github.event.pull_request.head.repo.fork && 'off' || 'firn' }}
       - name: verify
         env:
           IMAGE: ${{ steps.build.outputs.image }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          test "$(docker run --rm "$IMAGE" stat -c %u /owned)" = 0
+        run: test "$(docker run --rm "localhost:5000/${IMAGE#*/}" stat -c %u /owned)" = 0

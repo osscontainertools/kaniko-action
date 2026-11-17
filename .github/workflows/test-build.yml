@@ -10,27 +10,36 @@ on:
 
 permissions:
   contents: read
-  packages: write
+
+# kaniko runs on the default bridge and reaches the registry service through
+# its gateway, the runner reaches the same registry as localhost:5000.
+env:
+  REGISTRY: 172.17.0.1:5000
 
 jobs:
   build:
     runs-on: ubuntu-26.04
+    services:
+      registry:
+        image: registry:3.1.2@sha256:82f6ff4a7f982960c8aa51617fea3aabc485df6e55cce80d22deb1de36f1bc3c
+        ports:
+          - 5000:5000
     steps:
       - uses: actions/checkout@v7.0.1
       - id: build
         uses: ./
         with:
           context: tests/build
-          destination: ghcr.io/${{ github.repository }}/test-build:${{ github.sha }}
+          destination: ${{ env.REGISTRY }}/test-build:${{ github.sha }}
           target: base
           build-args: |
             GREETING=hello ${{ github.run_id }}
       - name: verify
         env:
           IMAGE: ${{ steps.build.outputs.image }}
-          GH_TOKEN: ${{ github.token }}
+          MERGE_IMAGE: registry.gitlab.com/osscontainertools/components/kaniko/merge:release-11b74ff77aae51e40166744b2c6e062c81633b84@sha256:322a2281f783d403be2b63ce88281f6ee54e9e08644d8f94628b5e23cdf6c4c8
         run: |
-          echo "$IMAGE" | grep -E "^ghcr.io/${GITHUB_REPOSITORY}/test-build@sha256:[0-9a-f]{64}$"
-          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          test "$(docker buildx imagetools inspect --raw "$IMAGE" | jq -r .mediaType)" = application/vnd.oci.image.index.v1+json
-          test "$(docker run --rm "$IMAGE" cat /greeting)" = "hello $GITHUB_RUN_ID"
+          echo "$IMAGE" | grep -E "^$REGISTRY/test-build@sha256:[0-9a-f]{64}$"
+          ref="localhost:5000/${IMAGE#*/}"
+          test "$(docker run --rm --network host "$MERGE_IMAGE" crane manifest "$ref" | jq -r .mediaType)" = application/vnd.oci.image.index.v1+json
+          test "$(docker run --rm "$ref" cat /greeting)" = "hello $GITHUB_RUN_ID"

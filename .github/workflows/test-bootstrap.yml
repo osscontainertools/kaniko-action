@@ -10,11 +10,20 @@ on:
 
 permissions:
   contents: read
-  packages: write
+
+# kaniko runs on the default bridge and reaches the registry service through
+# its gateway, the runner reaches the same registry as localhost:5000.
+env:
+  REGISTRY: 172.17.0.1:5000
 
 jobs:
   build:
     runs-on: ubuntu-26.04
+    services:
+      registry:
+        image: registry:3.1.2@sha256:82f6ff4a7f982960c8aa51617fea3aabc485df6e55cce80d22deb1de36f1bc3c
+        ports:
+          - 5000:5000
     steps:
       - uses: actions/checkout@v7.0.1
       # A docker login, as most workflows have, mounts a docker config into
@@ -26,13 +35,12 @@ jobs:
         uses: ./
         with:
           context: tests/bootstrap
-          destination: ghcr.io/${{ github.repository }}/test-bootstrap:${{ github.sha }}
+          destination: ${{ env.REGISTRY }}/test-bootstrap:${{ github.sha }}
           bootstrap: true
       - name: verify
         env:
           IMAGE: ${{ steps.build.outputs.image }}
-          GH_TOKEN: ${{ github.token }}
         run: |
-          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          test "$(docker run --rm "$IMAGE" cat /kaniko/marker)" = kaniko
-          test "$(docker run --rm "$IMAGE" cat /busybox/marker)" = busybox
+          ref="localhost:5000/${IMAGE#*/}"
+          test "$(docker run --rm "$ref" cat /kaniko/marker)" = kaniko
+          test "$(docker run --rm "$ref" cat /busybox/marker)" = busybox
