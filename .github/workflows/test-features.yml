@@ -36,7 +36,7 @@ jobs:
           profile-preview: true
           profile-buildkit: true
           github-token-secret: true
-          telemetry: ${{ github.event.pull_request.head.repo.fork && 'off' || 'firn' }}
+          telemetry: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'firn' || 'off' }}
       - name: verify
         env:
           IMAGE: ${{ steps.build.outputs.image }}
