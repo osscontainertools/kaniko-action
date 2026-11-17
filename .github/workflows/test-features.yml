@@ -1,8 +1,7 @@
 # Opt-in features: kaniko's Preview and BuildKit compatibility profiles, the
 # job's token as a build secret, and a trace of the build sent to Firn. The
 # BuildKit profile makes a COPY after `USER 1000` root-owned, as the Dockerfile
-# specification says. Telemetry needs `id-token: write`, which pull requests
-# from forks do not get.
+# specification says. Telemetry needs `id-token: write`.
 name: test-features
 
 on:

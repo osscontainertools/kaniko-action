@@ -2,8 +2,7 @@
 # own runner and merges them into one index. Later jobs read the index from the
 # `image` output. A user writes
 # `uses: osscontainertools/kaniko-action/.github/workflows/multiarch.yml@62bd46e3c9e39a6625220e87090a7af9cc431218 # v1.0.3`.
-# The runners share no registry but ghcr.io, which pull requests from forks
-# cannot write to.
+# The runners share no registry but ghcr.io, so pull requests from forks skip it.
 name: test-multiarch
 
 on:
