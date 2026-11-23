@@ -251,7 +251,13 @@ EOF
       set -- "$@" --provenance
     fi
   else
-    set -- "$@" --no-push --no-push-cache
+    set -- "$@" --no-push
+    # kaniko refuses --no-push-cache next to a target's cache_to, and --set
+    # adds to cache_to without clearing it.
+    case "$BAKE_TARGETS" in
+      *'"cache_to"'*) ;;
+      *) set -- "$@" --no-push-cache ;;
+    esac
   fi
   run false "$@"
   if [ "$INPUT_PUSH" != true ]; then

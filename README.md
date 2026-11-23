@@ -98,7 +98,7 @@ target "tools" {
         with:
           targets: app tools
           set: |
-            app.destination=ghcr.io/${{ github.repository }}/app:${{ github.ref_name }}
+            app.destination=ghcr.io/${{ github.repository }}/app:${{ github.sha }}
       - run: echo "pushed ${{ fromJSON(steps.bake.outputs.images).app }}"
 ```
 

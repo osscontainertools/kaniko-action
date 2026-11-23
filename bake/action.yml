@@ -19,7 +19,7 @@ inputs:
     description: Build context directory, relative to the workspace, for targets that do not set their own.
     default: .
   push:
-    description: Push the images and the layer cache. Without a push, the `images` output stays empty.
+    description: Push the images and the layer cache. Without a push, the `images` output stays empty, and only targets with their own `cache_to` still write their cache.
     default: "true"
   reproducible:
     description: Strip timestamps from the images, so the same inputs give the same digests.
