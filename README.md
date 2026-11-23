@@ -102,7 +102,23 @@ target "tools" {
       - run: echo "pushed ${{ fromJSON(steps.bake.outputs.images).app }}"
 ```
 
-`platforms` builds every target for each platform, emulated as with the action, and merges each target into one index at its destinations.
+`platforms` builds every target for each platform, emulated as with the action, and merges each target into one index at its destinations. For one runner per platform at native speed, use the reusable workflow `bake-multiarch.yml`, which takes the same `runners` as `multiarch.yml`:
+
+```yaml
+jobs:
+  images:
+    uses: osscontainertools/kaniko-action/.github/workflows/bake-multiarch.yml@62bd46e3c9e39a6625220e87090a7af9cc431218 # v1.0.3
+    permissions:
+      contents: read
+      packages: write
+    with:
+      targets: app tools
+  deploy:
+    needs: images
+    runs-on: ubuntu-26.04
+    steps:
+      - run: echo "deploying ${{ fromJSON(needs.images.outputs.images).app }}"
+```
 
 `cosign`, `tlog` and `sbom` sign each image and attach its SBOMs, as for one image, see [Signing](#signing).
 
@@ -151,6 +167,8 @@ The action retries pulls and the push three times, attaches a SLSA provenance at
 | [`test-container.yml`](.github/workflows/test-container.yml) | A job inside the kaniko image, as on Kubernetes, without a checkout |
 | [`test-multiarch-emulated.yml`](.github/workflows/test-multiarch-emulated.yml) | A multi-arch image in one job, emulated |
 | [`test-multiarch.yml`](.github/workflows/test-multiarch.yml) | A multi-arch image with one runner per platform |
+| [`test-bake.yml`](.github/workflows/test-bake.yml) | Several images from a bakefile, for one platform and emulated for two, and signed |
+| [`test-bake-multiarch.yml`](.github/workflows/test-bake-multiarch.yml) | Several multi-arch images from a bakefile with one runner per platform |
 | [`test-bootstrap.yml`](.github/workflows/test-bootstrap.yml) | A build of kaniko itself, or of any image with files in `/kaniko` or `/busybox` |
 
 For flags without an input, use `extra-args`, see kaniko's [flag reference](https://github.com/osscontainertools/kaniko#additional-flags). For registries other than ghcr.io, log in beforehand, for example with `docker/login-action`, or see [Pushing to Different Registries](https://github.com/osscontainertools/kaniko#pushing-to-different-registries).

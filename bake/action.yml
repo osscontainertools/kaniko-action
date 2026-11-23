@@ -140,6 +140,8 @@ runs:
         INPUT_DESTINATION: ""
         INPUT_TARGET: ""
         INPUT_BUILD_ARGS: ""
+        # Set by bake-multiarch.yml, which runs build.sh itself.
+        INPUT_ARCH: ""
         KANIKO_GHCR_IO_USER: ${{ github.actor }}
         KANIKO_GHCR_IO_PASSWORD: ${{ inputs.github-token }}
       run: GITHUB_ACTION_PATH="${GITHUB_ACTION_PATH%/bake}" "${GITHUB_ACTION_PATH%/bake}/build.sh"

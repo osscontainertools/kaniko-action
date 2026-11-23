@@ -252,7 +252,8 @@ tagged='def tagged: if split("/")[-1] | contains(":") then . else . + ":latest" 
 
 # Bakes every target with a destination for one platform, pushed to
 # `<first destination>-<suffix>`, and with a push prints the images as
-# bake.sh does.
+# bake.sh does. The merge job of bake-multiarch.yml derives the same
+# destinations.
 # Arguments: suffix, platform or empty, then the bake arguments without
 # destination overrides.
 bake_platform() {
@@ -304,7 +305,7 @@ EOF
       *) set -- "$@" --no-push-cache ;;
     esac
   fi
-  if [ -z "$INPUT_PLATFORMS" ]; then
+  if [ -z "$INPUT_PLATFORMS" ] && [ -z "$INPUT_ARCH" ]; then
     run false "$@"
     if [ "$INPUT_PUSH" = true ]; then
       images=$(bake_images "$BAKE_TARGETS")
@@ -318,6 +319,16 @@ EOF
         *) set -- "$@" "$arg" ;;
       esac
     done
+  fi
+  if [ -n "$INPUT_ARCH" ]; then
+    # One platform of bake-multiarch.yml, whose merge job reads the targets.
+    {
+      echo "targets<<KANIKO_TARGETS"
+      printf '%s\n' "$BAKE_TARGETS"
+      echo KANIKO_TARGETS
+    } >> "$GITHUB_OUTPUT"
+    images=$(bake_platform "$INPUT_ARCH" "" "$@")
+  elif [ -n "$INPUT_PLATFORMS" ]; then
     leaves='{}'
     for platform in $platforms; do
       platform_images=$(bake_platform "$(echo "${platform#*/}" | tr '/' '-')" "$platform" "$@")

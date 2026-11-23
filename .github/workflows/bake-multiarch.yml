@@ -1,0 +1,240 @@
+# Bakes every target once per platform, each on a native runner, and merges
+# each target into one index. Callers use it as a job:
+#
+#   jobs:
+#     images:
+#       uses: osscontainertools/kaniko-action/.github/workflows/bake-multiarch.yml@<commit>
+#
+# For a single job with emulated platforms, use the bake action's `platforms`
+# input.
+name: bake-multiarch
+
+on:
+  workflow_call:
+    inputs:
+      bakefile:
+        description: Path to the bakefile, relative to the repository.
+        type: string
+        default: kaniko-bake.hcl
+      targets:
+        description: Bakefile targets to build, separated by spaces. Empty builds every target.
+        type: string
+        default: ""
+      set:
+        description: Overrides of bakefile target fields, one `<target>.<field>=<value>` per line. Each platform pushes a target to `<first destination>-<arch>`, tagged `latest-<arch>` when the first destination has no tag, and the merge job pushes the index to every destination.
+        type: string
+        default: ""
+      context:
+        description: Build context directory, relative to the repository, for targets that do not set their own.
+        type: string
+        default: .
+      push:
+        description: Push the images. Without a push, nothing is merged.
+        type: boolean
+        default: true
+      provenance:
+        description: Attach a SLSA provenance attestation to each platform.
+        type: boolean
+        default: true
+      reproducible:
+        description: Strip timestamps from the images.
+        type: boolean
+        default: false
+      cache:
+        description: Layer cache in `<destination repository>/cache` for targets without their own `cache_from` and `cache_to`, `off` or `on`.
+        type: string
+        default: "off"
+      github-token-secret:
+        description: Offer the job's token to `RUN --mount=type=secret,id=github_token`, and as a `.netrc` for this GitHub instance to `id=netrc`.
+        type: boolean
+        default: false
+      profile-preview:
+        description: Enable kaniko's Preview profile.
+        type: boolean
+        default: false
+      profile-buildkit:
+        description: Enable kaniko's BuildKit compatibility profile.
+        type: boolean
+        default: false
+      telemetry:
+        description: "Where to send a trace of each build: `off`, `firn` or `custom`. `firn` and `custom` need `id-token: write`."
+        type: string
+        default: "off"
+      telemetry-endpoint:
+        description: OTLP/HTTP endpoint the trace goes to, with `telemetry` set to `custom`.
+        type: string
+        default: ""
+      telemetry-token-exchange-endpoint:
+        description: Endpoint that trades the job's ID token for a collector token, with `telemetry` set to `custom`.
+        type: string
+        default: ""
+      bootstrap:
+        description: Build images that have files in `/kaniko` or `/busybox`, such as kaniko itself.
+        type: boolean
+        default: false
+      platforms:
+        description: Platforms to build, as a JSON list.
+        type: string
+        default: '["linux/amd64", "linux/arm64"]'
+      runners:
+        description: Runner label for each platform, as a JSON object.
+        type: string
+        default: '{"linux/amd64": "ubuntu-26.04", "linux/arm64": "ubuntu-26.04-arm"}'
+      merge-image:
+        description: Image with crane and jq that reads the digests of the pushed images and merges the platforms.
+        type: string
+        default: registry.gitlab.com/osscontainertools/components/kaniko/merge:release-11b74ff77aae51e40166744b2c6e062c81633b84@sha256:322a2281f783d403be2b63ce88281f6ee54e9e08644d8f94628b5e23cdf6c4c8
+      cosign:
+        description: "Sign each index with cosign in the merge job: `off`, `keyless` or `key`. `keyless` signs with the job's ID token and needs `id-token: write`. `key` signs with the secret `COSIGN_PRIVATE_KEY`, whose password is the secret `COSIGN_PASSWORD`."
+        type: string
+        default: "off"
+      tlog:
+        description: Record the signatures in Sigstore's public Rekor transparency log. Keyless signing needs it.
+        type: boolean
+        default: true
+      sbom:
+        description: Attach a signed SPDX SBOM to each platform of each index, scanned with syft. Needs `cosign`.
+        type: boolean
+        default: false
+      sign-image:
+        description: Image with cosign, crane, jq and syft that signs the indexes and scans them.
+        type: string
+        default: registry.gitlab.com/osscontainertools/components/kaniko/sign:release-018d8426701f196bd5dac1f2d816ec7a90981044@sha256:f41302b91c8b93674140c4d707cf78b3beb285416d17fa92a274a2a5ed1c9dd9
+    secrets:
+      COSIGN_PRIVATE_KEY:
+        description: Key to sign with, with `cosign` set to `key`.
+        required: false
+      COSIGN_PASSWORD:
+        description: Password of `COSIGN_PRIVATE_KEY`.
+        required: false
+    outputs:
+      images:
+        description: "A JSON object of each target's name to its index, pinned by digest in the repository of its first destination, such as `{\"app\": \"ghcr.io/my-org/app@sha256:...\"}`."
+        value: ${{ jobs.merge.outputs.images }}
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        platform: ${{ fromJSON(inputs.platforms) }}
+    runs-on: ${{ fromJSON(inputs.runners)[matrix.platform] }}
+    outputs:
+      targets: ${{ steps.bake.outputs.targets }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      # Outside the workspace, so that it stays out of the build context.
+      - uses: actions/checkout@v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .kaniko-action
+      - run: mv .kaniko-action "$RUNNER_TEMP/kaniko-action"
+      - id: bake
+        shell: sh
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          INPUT_BAKEFILE: ${{ inputs.bakefile }}
+          INPUT_TARGETS: ${{ inputs.targets }}
+          INPUT_SET: ${{ inputs.set }}
+          INPUT_CONTEXT: ${{ inputs.context }}
+          INPUT_PUSH: ${{ inputs.push }}
+          INPUT_REPRODUCIBLE: ${{ inputs.reproducible }}
+          INPUT_CACHE: ${{ inputs.cache }}
+          INPUT_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          INPUT_GITHUB_TOKEN_SECRET: ${{ inputs.github-token-secret }}
+          INPUT_PROFILE_PREVIEW: ${{ inputs.profile-preview }}
+          INPUT_PROFILE_BUILDKIT: ${{ inputs.profile-buildkit }}
+          INPUT_TELEMETRY: ${{ inputs.telemetry }}
+          INPUT_TELEMETRY_ENDPOINT: ${{ inputs.telemetry-endpoint }}
+          INPUT_TELEMETRY_TOKEN_EXCHANGE_ENDPOINT: ${{ inputs.telemetry-token-exchange-endpoint }}
+          INPUT_PROVENANCE: ${{ inputs.provenance }}
+          INPUT_BOOTSTRAP: ${{ inputs.bootstrap }}
+          INPUT_MERGE_IMAGE: ${{ inputs.merge-image }}
+          INPUT_GITHUB_TOKEN: ${{ github.token }}
+          # The defaults of bake/action.yml.
+          INPUT_PREDEFINED_ANNOTATIONS: "true"
+          INPUT_RETRIES: "3"
+          INPUT_EXTRA_ARGS: ""
+          INPUT_IMAGE: ghcr.io/osscontainertools/kaniko:v1.29.2-debug@sha256:b3cadc638a5b0a7e8ae7b3b76704821b2b5f191163222da401283541c8fa2d41
+          INPUT_BOOTSTRAP_IMAGE: ghcr.io/osscontainertools/kaniko:v1.29.2-bootstrap@sha256:f58026e2f55b7bdc8dd8c702cc92f548b3e5d8c10f7eda4070aed86a0c2cd1e4
+          # The merge job signs.
+          INPUT_COSIGN: "off"
+          INPUT_COSIGN_KEY: ""
+          INPUT_TLOG: "true"
+          INPUT_SBOM: "false"
+          INPUT_SIGN_IMAGE: ""
+          INPUT_PLATFORMS: ""
+          INPUT_BINFMT_IMAGE: ""
+          INPUT_DOCKERFILE: Dockerfile
+          INPUT_DESTINATION: ""
+          INPUT_TARGET: ""
+          INPUT_BUILD_ARGS: ""
+          KANIKO_GHCR_IO_USER: ${{ github.actor }}
+          KANIKO_GHCR_IO_PASSWORD: ${{ github.token }}
+        run: |
+          INPUT_ARCH=$(echo "${PLATFORM#*/}" | tr / -) GITHUB_ACTION_PATH="$RUNNER_TEMP/kaniko-action" "$RUNNER_TEMP/kaniko-action/build.sh"
+
+  merge:
+    if: inputs.push
+    needs: build
+    runs-on: ubuntu-26.04
+    outputs:
+      images: ${{ steps.merge.outputs.images }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .kaniko-action
+      - id: merge
+        env:
+          TARGETS: ${{ needs.build.outputs.targets }}
+          PLATFORMS: ${{ inputs.platforms }}
+          MERGE_IMAGE: ${{ inputs.merge-image }}
+          KANIKO_GHCR_IO_USER: ${{ github.actor }}
+          KANIKO_GHCR_IO_PASSWORD: ${{ github.token }}
+        run: |
+          set -f
+          # Keep the per-platform destinations in sync with bake_platform in build.sh.
+          merges=$(printf '%s' "$TARGETS" | jq -r --argjson platforms "$PLATFORMS" '
+            def tagged: if split("/")[-1] | contains(":") then . else . + ":latest" end;
+            .target | to_entries[] | select(.value.destination | length > 0) | (.value.destination | .[0] |= tagged) as $d
+            | "\(.key) \([$platforms[] | $d[0] + "-" + (split("/")[1:] | join("-"))] | join(" ")),\($d | join(" "))"')
+          images='{}'
+          while IFS=, read -r leaves destinations; do
+            [ -n "$leaves" ] || continue
+            target=${leaves%% *}
+            image=$(docker run --rm \
+              --env MERGE_IMAGES="${leaves#* }" --env MERGE_DESTINATIONS="$destinations" \
+              --env KANIKO_GHCR_IO_USER --env KANIKO_GHCR_IO_PASSWORD \
+              --volume "$GITHUB_WORKSPACE/.kaniko-action/merge.sh:/merge.sh:ro" --entrypoint sh \
+              "$MERGE_IMAGE" /merge.sh)
+            images=$(jq -cn --argjson images "$images" --arg target "$target" --arg image "$image" '$images + {($target): $image}')
+          done <<EOF
+          $merges
+          EOF
+          echo "images=$images" >> "$GITHUB_OUTPUT"
+      - if: inputs.cosign != 'off'
+        env:
+          IMAGES: ${{ steps.merge.outputs.images }}
+          SIGN_COSIGN: ${{ inputs.cosign }}
+          SIGN_TLOG: ${{ inputs.tlog }}
+          SIGN_SBOM: ${{ inputs.sbom }}
+          SIGN_IMAGE: ${{ inputs.sign-image }}
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          KANIKO_GHCR_IO_USER: ${{ github.actor }}
+          KANIKO_GHCR_IO_PASSWORD: ${{ github.token }}
+        run: |
+          if [ "$SIGN_COSIGN" = keyless ]; then
+            SIGN_ID_TOKEN=$(curl -sSf -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sigstore" | jq -r .value)
+            echo "::add-mask::$SIGN_ID_TOKEN"
+            export SIGN_ID_TOKEN
+          fi
+          docker run --rm \
+            --env SIGN_IMAGES="$IMAGES" --env SIGN_COSIGN --env SIGN_KEY=env://COSIGN_PRIVATE_KEY \
+            --env SIGN_TLOG --env SIGN_SBOM --env SIGN_SERVER_URL="$GITHUB_SERVER_URL" --env SIGN_ID_TOKEN \
+            --env ACTIONS_ID_TOKEN_REQUEST_URL --env ACTIONS_ID_TOKEN_REQUEST_TOKEN \
+            --env COSIGN_PRIVATE_KEY --env COSIGN_PASSWORD --env KANIKO_GHCR_IO_USER --env KANIKO_GHCR_IO_PASSWORD \
+            --volume "$GITHUB_WORKSPACE/.kaniko-action/sign.sh:/sign.sh:ro" --entrypoint sh \
+            "$SIGN_IMAGE" /sign.sh

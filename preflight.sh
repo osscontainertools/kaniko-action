@@ -106,7 +106,7 @@ if [ -n "$INPUT_BAKEFILE" ]; then
         fail "bake needs crane and jq in the job's image on Kubernetes, such as the GitLab component's bake image"
     done
   fi
-  if [ -n "$INPUT_PLATFORMS" ]; then
+  if [ -n "$INPUT_PLATFORMS" ] || [ -n "$INPUT_ARCH" ]; then
     command -v jq >/dev/null 2>&1 || fail "bake with platforms needs jq on the runner"
   fi
 fi

@@ -1,0 +1,51 @@
+# Multi-arch bake at native speed: the reusable workflow bakes each platform on
+# its own runner and merges each target into one index. Later jobs read the
+# indexes from the `images` output. The merge job signs them keylessly.
+# The runners share no registry but ghcr.io, so pull requests from forks skip it.
+name: test-bake-multiarch
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+jobs:
+  images:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    uses: ./.github/workflows/bake-multiarch.yml
+    with:
+      bakefile: tests/bake/kaniko-bake.hcl
+      targets: app tools
+      context: tests/bake
+      set: |
+        app.destination=ghcr.io/${{ github.repository }}/test-bake-multiarch-app:${{ github.sha }}
+        tools.destination=ghcr.io/${{ github.repository }}/test-bake-multiarch-tools:${{ github.sha }}
+      cosign: keyless
+
+  verify:
+    needs: images
+    strategy:
+      matrix:
+        runner: [ubuntu-26.04, ubuntu-26.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - env:
+          IMAGES: ${{ needs.images.outputs.images }}
+          GH_TOKEN: ${{ github.token }}
+          IDENTITY: ${{ github.server_url }}/${{ github.repository }}/.github/workflows/bake-multiarch.yml@${{ github.ref }}
+          SIGN_IMAGE: registry.gitlab.com/osscontainertools/components/kaniko/sign:release-018d8426701f196bd5dac1f2d816ec7a90981044@sha256:f41302b91c8b93674140c4d707cf78b3beb285416d17fa92a274a2a5ed1c9dd9
+        run: |
+          test "$(echo "$IMAGES" | jq -c 'keys')" = '["app","tools"]'
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          for target in app tools; do
+            image=$(echo "$IMAGES" | jq -r --arg target "$target" '.[$target]')
+            echo "$image" | grep -E "^ghcr.io/${GITHUB_REPOSITORY}/test-bake-multiarch-$target@sha256:[0-9a-f]{64}$"
+            test "$(docker run --rm "$image" cat /target)" = "$target"
+            docker run --rm --volume "$HOME/.docker:/root/.docker:ro" --entrypoint cosign "$SIGN_IMAGE" verify "$image" \
+              --certificate-identity "$IDENTITY" --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
+          done
