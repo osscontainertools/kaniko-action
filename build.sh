@@ -82,12 +82,16 @@ fi
 set -- "$@" \
   --context="$context" \
   --dockerfile="$dockerfile" \
-  --target="$INPUT_TARGET" \
   --push-retry="$INPUT_RETRIES" \
   --image-download-retry="$INPUT_RETRIES" \
   --predefined-annotations="$INPUT_PREDEFINED_ANNOTATIONS" \
   --reproducible="$INPUT_REPRODUCIBLE" \
   --credential-helpers=env
+
+# bake takes the stage from the bakefile.
+if [ -z "$INPUT_BAKEFILE" ]; then
+  set -- "$@" --target="$INPUT_TARGET"
+fi
 
 case "$INPUT_CACHE" in
   off) ;;
@@ -152,6 +156,44 @@ EOF
 # shellcheck disable=SC2086 # extra-args holds several flags
 set -- "$@" $INPUT_EXTRA_ARGS
 
+env_names="GITHUB_ACTIONS GITHUB_REPOSITORY GITHUB_SHA GITHUB_REF GITHUB_REF_NAME GITHUB_HEAD_REF GITHUB_SERVER_URL GITHUB_WORKFLOW GITHUB_JOB GITHUB_RUN_ID GITHUB_RUN_ATTEMPT KANIKO_GHCR_IO_USER KANIKO_GHCR_IO_PASSWORD GIT_USERNAME GIT_PASSWORD"
+env_names="$env_names $(env | sed -n 's/^\(\(FF_\)\{0,1\}KANIKO_[A-Z0-9_]*\)=.*/\1/p' | tr '\n' ' ')"
+env_flags=""
+for env_name in $env_names; do
+  env_flags="$env_flags --env $env_name"
+done
+config_flags=""
+# Outside /kaniko, which kaniko moves away in bootstrap mode.
+if [ -f "$HOME/.docker/config.json" ]; then
+  config_flags="--volume $HOME/.docker/config.json:/docker-config/config.json:ro --env DOCKER_CONFIG=/docker-config"
+fi
+
+# Runs the executor with the remaining arguments, in this job or in its own
+# container. With `true` as the first argument, it then copies what the
+# executor wrote to $out into $results.
+run() {
+  copy="$1"
+  shift
+  if [ "$direct" = true ]; then
+    /kaniko/executor "$@"
+    return
+  fi
+  # shellcheck disable=SC2086 # the flag lists are word-split on purpose
+  cid=$(docker create $env_flags $config_flags --volume "$GITHUB_WORKSPACE:/workspace:ro" "$image" "$@")
+  status=0
+  docker start --attach "$cid" || status=$?
+  if [ "$status" = 0 ]; then
+    status=$(docker inspect --format '{{.State.ExitCode}}' "$cid")
+  fi
+  if [ "$status" = 0 ] && [ "$copy" = true ]; then
+    docker cp "$cid:$out/." "$results"
+  fi
+  docker rm --force "$cid" > /dev/null
+  if [ "$status" != 0 ]; then
+    exit "$status"
+  fi
+}
+
 # Builds one image and writes it, pinned by digest in $repo, to
 # $results/<name>/ref.
 # Arguments: destination, platform or empty, name, then the shared flags.
@@ -174,34 +216,8 @@ build() {
 
   if [ "$direct" = true ]; then
     mkdir -p "$out/$name"
-    /kaniko/executor "$@"
-  else
-    env_names="GITHUB_ACTIONS GITHUB_REPOSITORY GITHUB_SHA GITHUB_REF GITHUB_REF_NAME GITHUB_HEAD_REF GITHUB_SERVER_URL GITHUB_WORKFLOW GITHUB_JOB GITHUB_RUN_ID GITHUB_RUN_ATTEMPT KANIKO_GHCR_IO_USER KANIKO_GHCR_IO_PASSWORD GIT_USERNAME GIT_PASSWORD"
-    env_names="$env_names $(env | sed -n 's/^\(\(FF_\)\{0,1\}KANIKO_[A-Z0-9_]*\)=.*/\1/p' | tr '\n' ' ')"
-    env_flags=""
-    for env_name in $env_names; do
-      env_flags="$env_flags --env $env_name"
-    done
-    config_flags=""
-    # Outside /kaniko, which kaniko moves away in bootstrap mode.
-    if [ -f "$HOME/.docker/config.json" ]; then
-      config_flags="--volume $HOME/.docker/config.json:/docker-config/config.json:ro --env DOCKER_CONFIG=/docker-config"
-    fi
-    # shellcheck disable=SC2086 # the flag lists are word-split on purpose
-    cid=$(docker create $env_flags $config_flags --volume "$GITHUB_WORKSPACE:/workspace:ro" "$image" "$@")
-    status=0
-    docker start --attach "$cid" || status=$?
-    if [ "$status" = 0 ]; then
-      status=$(docker inspect --format '{{.State.ExitCode}}' "$cid")
-    fi
-    if [ "$status" = 0 ]; then
-      docker cp "$cid:$out/." "$results"
-    fi
-    docker rm --force "$cid" > /dev/null
-    if [ "$status" != 0 ]; then
-      exit "$status"
-    fi
   fi
+  run true "$@"
 
   if [ "$INPUT_PUSH" = true ]; then
     digest=$(head -n 1 "$results/$name/image")
@@ -216,6 +232,42 @@ build() {
 helper_config_flags=""
 if [ -f "$HOME/.docker/config.json" ]; then
   helper_config_flags="--volume $HOME/.docker/config.json:/docker-config/config.json:ro"
+fi
+
+if [ -n "$INPUT_BAKEFILE" ]; then
+  while IFS= read -r line; do
+    if [ -n "$line" ]; then
+      set -- "$@" "--set=$line"
+    fi
+  done <<EOF
+$INPUT_SET
+EOF
+  # shellcheck disable=SC2086 # targets holds several names
+  set -- bake "$root/$INPUT_BAKEFILE" $INPUT_TARGETS "$@"
+  BAKE_TARGETS=$(run false "$@" --print)
+  export BAKE_TARGETS
+  if [ "$INPUT_PUSH" = true ]; then
+    if [ "$INPUT_PROVENANCE" = true ]; then
+      set -- "$@" --provenance
+    fi
+  else
+    set -- "$@" --no-push --no-push-cache
+  fi
+  run false "$@"
+  if [ "$INPUT_PUSH" != true ]; then
+    exit 0
+  fi
+  if [ "$direct" = true ]; then
+    images=$(sh "$GITHUB_ACTION_PATH/bake.sh")
+  else
+    # shellcheck disable=SC2086 # the flag list is word-split on purpose
+    images=$(docker run --rm $helper_config_flags \
+      --env BAKE_TARGETS --env KANIKO_GHCR_IO_USER --env KANIKO_GHCR_IO_PASSWORD \
+      --volume "$GITHUB_ACTION_PATH/bake.sh:/bake.sh:ro" --entrypoint sh \
+      "$INPUT_MERGE_IMAGE" /bake.sh)
+  fi
+  echo "images=$images" >> "$GITHUB_OUTPUT"
+  exit 0
 fi
 
 if [ -z "$INPUT_PLATFORMS" ]; then

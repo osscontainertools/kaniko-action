@@ -1,0 +1,124 @@
+name: kaniko bake (OSS Container Tools)
+description: Build several images from a kaniko bakefile in one step and push them, without Docker privileges.
+author: OSS Container Tools
+branding:
+  icon: package
+  color: blue
+
+inputs:
+  bakefile:
+    description: Path to the [bakefile](https://github.com/osscontainertools/kaniko/blob/v1.29.2/docs/bakefile.md), relative to the workspace. Needs a checkout.
+    default: kaniko-bake.hcl
+  targets:
+    description: Bakefile targets to build, separated by spaces. Empty builds every target.
+    default: ""
+  set:
+    description: Overrides of bakefile target fields, one `<target>.<field>=<value>` per line, such as `app.destination=ghcr.io/my-org/app:latest`.
+    default: ""
+  context:
+    description: Build context directory, relative to the workspace, for targets that do not set their own.
+    default: .
+  push:
+    description: Push the images and the layer cache. Without a push, the `images` output stays empty.
+    default: "true"
+  reproducible:
+    description: Strip timestamps from the images, so the same inputs give the same digests.
+    default: "false"
+  cache:
+    description: Layer cache in `<destination repository>/cache` for targets without their own `cache_from` and `cache_to`, `off` or `on`.
+    default: "off"
+  github-token-secret:
+    description: Offer `github-token` to `RUN --mount=type=secret,id=github_token`, and as a `.netrc` for this GitHub instance to `id=netrc`, for private dependencies on GitHub. Only the `RUN` steps that mount it see it, and it never ends up in the images.
+    default: "false"
+  profile-preview:
+    description: Enable kaniko's [Preview profile](https://github.com/osscontainertools/kaniko/blob/v1.29.2/docs/feature-flags.md#preview), the feature flags that become default in the next release. Feature flags set in the environment win.
+    default: "false"
+  profile-buildkit:
+    description: Enable kaniko's [BuildKit compatibility profile](https://github.com/osscontainertools/kaniko/blob/v1.29.2/docs/feature-flags.md#buildkit-compatibility), which follows the Dockerfile specification where kaniko historically does not. Feature flags set in the environment win.
+    default: "false"
+  telemetry:
+    description: "Where to send a trace of the build: `off`, `firn` or `custom`. `firn` and `custom` need `id-token: write`."
+    default: "off"
+  telemetry-endpoint:
+    description: Required HTTP(S) OTLP endpoint the trace goes to, with `telemetry` set to `custom`.
+    default: ""
+  telemetry-token-exchange-endpoint:
+    description: Optional HTTP(S) endpoint that trades the job's ID token for a collector token, with `telemetry` set to `custom`. Empty sends no token.
+    default: ""
+  provenance:
+    description: Attach a SLSA provenance attestation to each image. The images are then pushed as indexes.
+    default: "true"
+  predefined-annotations:
+    description: Annotate the images with their source, revision and version, read from the workflow run.
+    default: "true"
+  retries:
+    description: Number of retries of pulls and the push.
+    default: "3"
+  github-token:
+    description: "Token kaniko uses for ghcr.io. Pushing needs `packages: write`."
+    default: ${{ github.token }}
+  extra-args:
+    description: Additional executor flags.
+    default: ""
+  image:
+    description: kaniko debug image to run the build in, when the job does not already run in a kaniko image. On Kubernetes, run the job in an image that also has crane and jq, such as the GitLab component's [bake image](https://gitlab.com/osscontainertools/components/kaniko/-/blob/main/images/bake/Dockerfile).
+    default: ghcr.io/osscontainertools/kaniko:v1.29.2-debug@sha256:b3cadc638a5b0a7e8ae7b3b76704821b2b5f191163222da401283541c8fa2d41
+  bootstrap:
+    description: Build images that have files in `/kaniko` or `/busybox`, such as kaniko itself. Runs in `bootstrap-image` with `KANIKO_DIR=/kaniko2`.
+    default: "false"
+  bootstrap-image:
+    description: kaniko bootstrap image to run the build in, with `bootstrap` enabled.
+    default: ghcr.io/osscontainertools/kaniko:v1.29.2-bootstrap@sha256:f58026e2f55b7bdc8dd8c702cc92f548b3e5d8c10f7eda4070aed86a0c2cd1e4
+  merge-image:
+    description: Image with crane and jq that reads the digests of the pushed images.
+    default: registry.gitlab.com/osscontainertools/components/kaniko/merge:release-11b74ff77aae51e40166744b2c6e062c81633b84@sha256:322a2281f783d403be2b63ce88281f6ee54e9e08644d8f94628b5e23cdf6c4c8
+
+outputs:
+  images:
+    description: "A JSON object of each target's name to its image, pinned by digest in the repository of its first destination, such as `{\"app\": \"ghcr.io/my-org/app@sha256:...\"}`. Read one with `fromJSON(steps.<id>.outputs.images).app`."
+    value: ${{ steps.bake.outputs.images }}
+
+runs:
+  using: composite
+  steps:
+    - id: bake
+      shell: sh
+      env:
+        INPUT_BAKEFILE: ${{ inputs.bakefile }}
+        INPUT_TARGETS: ${{ inputs.targets }}
+        INPUT_SET: ${{ inputs.set }}
+        INPUT_CONTEXT: ${{ inputs.context }}
+        INPUT_PUSH: ${{ inputs.push }}
+        INPUT_REPRODUCIBLE: ${{ inputs.reproducible }}
+        INPUT_CACHE: ${{ inputs.cache }}
+        INPUT_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        INPUT_GITHUB_TOKEN_SECRET: ${{ inputs.github-token-secret }}
+        INPUT_PROFILE_PREVIEW: ${{ inputs.profile-preview }}
+        INPUT_PROFILE_BUILDKIT: ${{ inputs.profile-buildkit }}
+        INPUT_TELEMETRY: ${{ inputs.telemetry }}
+        INPUT_TELEMETRY_ENDPOINT: ${{ inputs.telemetry-endpoint }}
+        INPUT_TELEMETRY_TOKEN_EXCHANGE_ENDPOINT: ${{ inputs.telemetry-token-exchange-endpoint }}
+        INPUT_PROVENANCE: ${{ inputs.provenance }}
+        INPUT_PREDEFINED_ANNOTATIONS: ${{ inputs.predefined-annotations }}
+        INPUT_RETRIES: ${{ inputs.retries }}
+        INPUT_EXTRA_ARGS: ${{ inputs.extra-args }}
+        INPUT_IMAGE: ${{ inputs.image }}
+        INPUT_BOOTSTRAP: ${{ inputs.bootstrap }}
+        INPUT_BOOTSTRAP_IMAGE: ${{ inputs.bootstrap-image }}
+        INPUT_MERGE_IMAGE: ${{ inputs.merge-image }}
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        # The inputs of the action one level up that bake does not take.
+        INPUT_DOCKERFILE: Dockerfile
+        INPUT_DESTINATION: ""
+        INPUT_TARGET: ""
+        INPUT_BUILD_ARGS: ""
+        INPUT_PLATFORMS: ""
+        INPUT_BINFMT_IMAGE: ""
+        INPUT_COSIGN: "off"
+        INPUT_COSIGN_KEY: ""
+        INPUT_TLOG: "true"
+        INPUT_SBOM: "false"
+        INPUT_SIGN_IMAGE: ""
+        KANIKO_GHCR_IO_USER: ${{ github.actor }}
+        KANIKO_GHCR_IO_PASSWORD: ${{ inputs.github-token }}
+      run: GITHUB_ACTION_PATH="${GITHUB_ACTION_PATH%/bake}" "${GITHUB_ACTION_PATH%/bake}/build.sh"

@@ -11,6 +11,8 @@ workflows:
         - 'astral-sh/setup-uv@v9.0.0'
     '.github/workflows/release.yml':
         - 'actions/checkout@v7.0.1'
+    '.github/workflows/test-bake.yml':
+        - 'actions/checkout@v7.0.1'
     '.github/workflows/test-bootstrap.yml':
         - 'actions/checkout@v7.0.1'
     '.github/workflows/test-build.yml':

@@ -90,8 +90,22 @@ fi
 if [ -n "${INPUT_LOCAL_CONTEXT:-}" ]; then
   [ -d "$INPUT_LOCAL_CONTEXT" ] ||
     fail "context directory does not exist: '$INPUT_LOCAL_CONTEXT'"
-  [ -f "$INPUT_LOCAL_DOCKERFILE" ] ||
+  # Bake targets can name their own Dockerfiles.
+  [ -n "$INPUT_BAKEFILE" ] || [ -f "$INPUT_LOCAL_DOCKERFILE" ] ||
     fail "Dockerfile does not exist: '$INPUT_LOCAL_DOCKERFILE'"
+fi
+
+if [ -n "$INPUT_BAKEFILE" ]; then
+  [ -f "$GITHUB_WORKSPACE/$INPUT_BAKEFILE" ] ||
+    fail "bakefile does not exist: '$INPUT_BAKEFILE'"
+  [ "$INPUT_CACHE" != split ] ||
+    fail "bake takes cache off or on, targets set their own caches in the bakefile"
+  if [ "$INPUT_DIRECT" = true ] && [ "$INPUT_PUSH" = true ]; then
+    for tool in crane jq; do
+      command -v "$tool" >/dev/null 2>&1 ||
+        fail "bake needs crane and jq in the job's image on Kubernetes, such as the GitLab component's bake image"
+    done
+  fi
 fi
 
 if [ -n "$INPUT_PLATFORMS" ] && [ "$INPUT_DIRECT" = true ]; then

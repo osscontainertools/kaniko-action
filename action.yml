@@ -137,6 +137,7 @@ runs:
         INPUT_SBOM: ${{ inputs.sbom }}
         INPUT_SIGN_IMAGE: ${{ inputs.sign-image }}
         INPUT_MERGE_IMAGE: ${{ inputs.merge-image }}
+        INPUT_BAKEFILE: ""
         INPUT_BINFMT_IMAGE: ${{ inputs.binfmt-image }}
         INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
         KANIKO_GHCR_IO_USER: ${{ github.actor }}
